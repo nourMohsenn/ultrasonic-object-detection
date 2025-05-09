@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Object Detection</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+    <style>
+      video,
+      canvas,
+      img {
+        max-width: 100%;
+        display: block;
+        margin-bottom: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Camera Feed</h2>
+    <video id="video" width="400" height="300" autoplay></video>
+
+    <h2>Captured Image</h2>
+    <canvas id="canvas" width="400" height="300" style="display: none"></canvas>
+    <img id="capturedImage" width="400" height="300" />
+
+    <h2>Detected Objects</h2>
+    <ul id="objectList"></ul>
+
+    <h3 id="statusMessage" style="color: green"></h3>
+    <h3 id="objectsMessage"></h3>
+
+    <script>
+      const backendURL = "https://flask-object-detect.vercel.app/check_trigger"; // ⬅️ Change this to your actual backend endpoint
+      const video = document.getElementById("video");
+      const canvas = document.getElementById("canvas");
+      const imgTag = document.getElementById("capturedImage");
+      const objectList = document.getElementById("objectList");
+      const statusMessage = document.getElementById("statusMessage");
+      const objectsMessage = document.getElementById("objectsMessage");
+
+      let model;
+      let intervalId;
+
+      // Load model and start camera
+      cocoSsd.load().then((loadedModel) => {
+        model = loadedModel;
+        console.log("Model loaded successfully");
+        statusMessage.textContent = "Model loaded successfully";
+        startCamera().then(() => {
+          intervalId = setInterval(pollBackend, 5000); // Start polling
+        });
+      });
+
+      // Start video stream
+      async function startCamera() {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+        });
+        video.srcObject = stream;
+        return new Promise((resolve) => {
+          video.onloadedmetadata = () => resolve();
+        });
+      }
+
+      // Poll the backend for trigger
+      async function pollBackend() {
+        try {
+          const res = await fetch(backendURL);
+          const data = await res.json();
+          if (data.triggered) {
+            console.log("Triggered! Capturing image...");
+            statusMessage.textContent = "Triggered! Capturing image...";
+            clearInterval(intervalId); // Stop polling
+            captureAndDetect(); // Proceed to detect
+          }
+        } catch (err) {
+          console.error("Error checking trigger:", err);
+        }
+      }
+
+      // Capture frame from video and detect objects
+      async function captureAndDetect() {
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL("image/jpeg");
+        imgTag.src = dataUrl;
+
+        imgTag.onload = async () => {
+          const predictions = await model.detect(imgTag);
+          objectList.innerHTML = "";
+
+          if (predictions.length === 0) {
+            objectList.innerHTML = "<li>No objects detected.</li>";
+            objectsMessage.textContent = "No objects detected.";
+          } else {
+            predictions.forEach((pred) => {
+              // 🔢 Count each object
+              const objectCounts = {};
+              predictions.forEach((pred) => {
+                const obj = pred.class;
+                objectCounts[obj] = (objectCounts[obj] || 0) + 1;
+              });
+              // 📝 Build the descriptive string
+              const description = Object.entries(objectCounts)
+                .map(
+                  ([name, count]) => `${count} ${name}${count > 1 ? "s" : ""}`
+                )
+                .join(" and ");
+                 console.log("Description:", description);
+                 objectsMessage.textContent = description;
+              //-----------
+              const li = document.createElement("li");
+              li.textContent = pred.class;
+              objectList.appendChild(li);
+            });
+          }
+
+          console.log("Detections:", predictions);
+          speechSynthesis.speak(new SpeechSynthesisUtterance(objectsMessage.textContent));
+          statusMessage.textContent =
+            "Detection done. Waiting for next trigger...";
+          intervalId = setInterval(pollBackend, 5000); // Resume polling
+        };
+      }
+    </script>
+  </body>
+</html>
