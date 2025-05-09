@@ -54,7 +54,8 @@
       // Start video stream
       async function startCamera() {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
+           video: { facingMode: { exact: "environment" } },
+           audio: false
         });
         video.srcObject = stream;
         return new Promise((resolve) => {
